@@ -56,6 +56,11 @@ function App() {
       return;
     }
 
+    if (maxRowsPerFile > 10000) {
+      setError('Le nombre de lignes par fichier ne peut pas dépasser 10 000.');
+      return;
+    }
+
     setIsProcessing(true);
     setError(null);
     setResult(null);
@@ -161,7 +166,7 @@ function App() {
               ) : (
                 <div>
                   <p><strong>Cliquez pour sélectionner</strong> ou glissez-déposez votre fichier CSV</p>
-                  <p className="dropzone-hint">Formats acceptés: .csv (max 4MB)</p>
+                  <p className="dropzone-hint">Formats acceptés: .csv (max 4MB, max 10 000 lignes par fichier)</p>
                 </div>
               )}
             </div>

@@ -64,6 +64,9 @@ const analyzeCsvFile = (fileBuffer, hasHeader) => {
     let lineCount = 0;
     let header = null;
 
+    console.log('Début analyse CSV - Buffer size:', fileBuffer.length, 'bytes');
+    console.log('Has header:', hasHeader);
+
     // Créer un stream à partir du buffer
     const stream = require('stream');
     const readable = new stream.Readable();
@@ -75,11 +78,18 @@ const analyzeCsvFile = (fileBuffer, hasHeader) => {
       .on('data', (data) => {
         if (lineCount === 0 && hasHeader) {
           header = Object.keys(data);
+          console.log('Headers détectés:', header);
         }
         results.push(data);
         lineCount++;
+        
+        if (lineCount % 1000 === 0) {
+          console.log(`Lignes traitées: ${lineCount}`);
+        }
       })
       .on('end', () => {
+        console.log('Analyse terminée - Total lignes:', lineCount);
+        console.log('Headers finaux:', header);
         resolve({
           totalRows: lineCount,
           header: header,
@@ -87,6 +97,7 @@ const analyzeCsvFile = (fileBuffer, hasHeader) => {
         });
       })
       .on('error', (error) => {
+        console.error('Erreur lors de l\'analyse CSV:', error);
         reject(error);
       });
   });
@@ -96,6 +107,9 @@ const analyzeCsvFile = (fileBuffer, hasHeader) => {
 const createCsvFile = (data, headers) => {
   return new Promise((resolve, reject) => {
     try {
+      console.log('Création CSV - Nombre de lignes:', data.length);
+      console.log('Headers utilisés:', headers);
+      
       // Générer le CSV directement en mémoire
       let csvContent = '';
       
@@ -103,7 +117,7 @@ const createCsvFile = (data, headers) => {
       csvContent += headers.join(',') + '\n';
       
       // Ajouter les données
-      data.forEach(row => {
+      data.forEach((row, index) => {
         const rowValues = headers.map(header => {
           const value = row[header] || '';
           // Échapper les virgules et guillemets
@@ -113,10 +127,16 @@ const createCsvFile = (data, headers) => {
           return value;
         });
         csvContent += rowValues.join(',') + '\n';
+        
+        if (index % 1000 === 0 && index > 0) {
+          console.log(`CSV - Lignes traitées: ${index}/${data.length}`);
+        }
       });
       
+      console.log('CSV généré - Taille:', csvContent.length, 'caractères');
       resolve(csvContent);
     } catch (error) {
+      console.error('Erreur lors de la création CSV:', error);
       reject(error);
     }
   });
@@ -176,6 +196,26 @@ app.post('/api/split-csv', upload.single('file'), async (req, res) => {
     const totalDataRows = dataRows.length;
     
     console.log('Début du découpage:', { totalDataRows, maxRows });
+    
+    // Validation des données
+    if (!dataRows || dataRows.length === 0) {
+      console.log('Erreur: Aucune donnée à traiter');
+      clearTimeout(timeout);
+      return res.status(400).json({ error: 'Le fichier ne contient aucune donnée valide' });
+    }
+    
+    if (!analysis.header || analysis.header.length === 0) {
+      console.log('Erreur: Aucun header détecté');
+      clearTimeout(timeout);
+      return res.status(400).json({ error: 'Impossible de détecter les colonnes du fichier CSV' });
+    }
+    
+    // Limiter le nombre de lignes par fichier pour éviter les problèmes de mémoire
+    if (maxRows > 10000) {
+      console.log('Erreur: Nombre de lignes par fichier trop élevé');
+      clearTimeout(timeout);
+      return res.status(400).json({ error: 'Le nombre de lignes par fichier ne peut pas dépasser 10 000' });
+    }
     
     // Calculer le nombre de fichiers nécessaires
     const numberOfFiles = Math.ceil(totalDataRows / maxRows);

@@ -1,6 +1,6 @@
 // Configuration des URLs d'API selon l'environnement
 const API_BASE_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://csv-ninja.vercel.app/api'
+  ? '/api'
   : 'http://localhost:5002/api';
 
 export default API_BASE_URL;

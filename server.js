@@ -261,13 +261,7 @@ if (process.env.NODE_ENV === 'production') {
   
   // Route pour servir index.html pour toutes les routes non-API
   app.get('*', (req, res) => {
-    // Vérifier si le fichier demandé existe
-    const filePath = path.join(__dirname, 'client/build', req.path);
-    if (fs.existsSync(filePath) && !fs.statSync(filePath).isDirectory()) {
-      res.sendFile(filePath);
-    } else {
-      res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
-    }
+    res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
   });
 }
 

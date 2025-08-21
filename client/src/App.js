@@ -23,7 +23,7 @@ function App() {
 
   const onDrop = useCallback((acceptedFiles) => {
     const uploadedFile = acceptedFiles[0];
-    if (uploadedFile && uploadedFile.type === 'text/csv' || uploadedFile.name.endsWith('.csv')) {
+    if (uploadedFile && (uploadedFile.type === 'text/csv' || uploadedFile.name.endsWith('.csv'))) {
       setFile(uploadedFile);
       setError(null);
     } else {

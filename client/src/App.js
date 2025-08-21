@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
+import API_BASE_URL from './config';
 import { 
   Upload, 
   Download, 
@@ -59,7 +60,7 @@ function App() {
     formData.append('hasHeader', hasHeader);
 
     try {
-      const response = await axios.post('/api/split-csv', formData, {
+      const response = await axios.post(`${API_BASE_URL}/split-csv`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -75,7 +76,7 @@ function App() {
 
   const handleDownloadFile = async (filename) => {
     try {
-      const response = await axios.get(`/api/download/${filename}`, {
+      const response = await axios.get(`${API_BASE_URL}/download/${filename}`, {
         responseType: 'blob',
       });
 
@@ -96,7 +97,7 @@ function App() {
     if (!result?.files) return;
 
     try {
-      const response = await axios.post('/api/download-all', {
+      const response = await axios.post(`${API_BASE_URL}/download-all`, {
         files: result.files
       }, {
         responseType: 'blob',

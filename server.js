@@ -263,6 +263,9 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
+// Export pour Vercel
+module.exports = app;
+
 // Gestion des erreurs globales
 app.use((error, req, res, next) => {
   console.error('Erreur serveur:', error);
@@ -272,7 +275,10 @@ app.use((error, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Serveur Splitter démarré sur le port ${PORT}`);
-  console.log(`📁 Mode: ${process.env.NODE_ENV || 'development'}`);
-});
+// Démarrage du serveur seulement si pas sur Vercel
+if (process.env.NODE_ENV !== 'production' || process.env.VERCEL !== '1') {
+  app.listen(PORT, () => {
+    console.log(`🚀 Serveur CSV Ninja démarré sur le port ${PORT}`);
+    console.log(`📁 Mode: ${process.env.NODE_ENV || 'development'}`);
+  });
+}

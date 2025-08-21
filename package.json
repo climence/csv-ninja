@@ -9,9 +9,6 @@
     "build": "cd client && npm install && npm run build",
     "vercel-build": "npm run build"
   },
-  "keywords": ["csv", "split", "file", "processing"],
-  "author": "Copromatic",
-  "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",
     "multer": "^1.4.5-lts.1",
@@ -25,7 +22,7 @@
   "devDependencies": {
     "nodemon": "^3.0.2"
   },
-  "engines": {
-    "node": ">=16.0.0"
-  }
+  "keywords": ["csv", "split", "file", "processing"],
+  "author": "Copromatic",
+  "license": "MIT"
 }

@@ -265,6 +265,32 @@ app.post('/api/download-all', async (req, res) => {
   }, 10000);
 });
 
+// Route pour servir l'application React en production
+if (process.env.NODE_ENV === 'production') {
+  // Construire le client React si nécessaire
+  const clientBuildPath = path.join(__dirname, 'client/build');
+  
+  // Vérifier si le build existe, sinon le créer
+  if (!fs.existsSync(clientBuildPath)) {
+    console.log('Build React non trouvé, construction en cours...');
+    const { execSync } = require('child_process');
+    try {
+      execSync('cd client && npm install && npm run build', { stdio: 'inherit' });
+      console.log('Build React terminé');
+    } catch (error) {
+      console.error('Erreur lors du build React:', error);
+    }
+  }
+  
+  // Servir les fichiers statiques du build React
+  app.use(express.static(clientBuildPath));
+  
+  // Route pour servir index.html pour toutes les routes non-API
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(clientBuildPath, 'index.html'));
+  });
+}
+
 // Export pour Vercel
 module.exports = app;
 

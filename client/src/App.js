@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
+import JSZip from 'jszip';
 import API_BASE_URL from './config';
 import { 
   Upload, 
@@ -74,16 +75,14 @@ function App() {
     }
   };
 
-  const handleDownloadFile = async (filename) => {
+  const handleDownloadFile = async (fileData) => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/download/${filename}`, {
-        responseType: 'blob',
-      });
-
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      // Créer un blob à partir du contenu CSV
+      const blob = new Blob([fileData.content], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', filename);
+      link.setAttribute('download', fileData.filename);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -97,13 +96,19 @@ function App() {
     if (!result?.files) return;
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/download-all`, {
-        files: result.files
-      }, {
-        responseType: 'blob',
+      // Créer le ZIP côté client
+      const zip = new JSZip();
+      
+      // Ajouter chaque fichier au ZIP
+      result.files.forEach(file => {
+        zip.file(file.filename, file.content);
       });
-
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      
+      // Générer le ZIP
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      
+      // Télécharger le ZIP
+      const url = window.URL.createObjectURL(zipBlob);
       const link = document.createElement('a');
       link.href = url;
       link.setAttribute('download', 'fichiers_decoupes.zip');
@@ -266,7 +271,7 @@ function App() {
                     <div className="file-item-actions">
                       <button 
                         className="btn btn-secondary"
-                        onClick={() => handleDownloadFile(file.filename)}
+                        onClick={() => handleDownloadFile(file)}
                       >
                         <Download size={16} />
                         Télécharger

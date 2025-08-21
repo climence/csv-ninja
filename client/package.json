@@ -12,7 +12,8 @@
     "axios": "^1.6.0",
     "react-dropzone": "^14.2.3",
     "react-hot-toast": "^2.4.1",
-    "lucide-react": "^0.294.0"
+    "lucide-react": "^0.294.0",
+    "jszip": "^3.10.1"
   },
   "scripts": {
     "start": "react-scripts start",

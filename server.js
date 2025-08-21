@@ -14,6 +14,9 @@ const { promisify } = require('util');
 const app = express();
 const PORT = process.env.PORT || 5002;
 
+// Configuration pour Vercel (proxy trust)
+app.set('trust proxy', 1);
+
 // Middleware de logging pour déboguer
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
@@ -39,20 +42,8 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Configuration Multer pour le stockage temporaire
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, 'uploads');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + '.csv');
-  }
-});
+// Configuration Multer pour le stockage temporaire (compatible Vercel)
+const storage = multer.memoryStorage(); // Utiliser la mémoire au lieu du disque
 
 const upload = multer({
   storage: storage,
@@ -68,23 +59,20 @@ const upload = multer({
   }
 });
 
-// Fonction pour nettoyer les fichiers temporaires
-const cleanupFiles = (files) => {
-  files.forEach(file => {
-    if (fs.existsSync(file)) {
-      fs.unlinkSync(file);
-    }
-  });
-};
-
-// Fonction pour lire le fichier CSV et compter les lignes
-const analyzeCsvFile = (filePath, hasHeader) => {
+// Fonction pour lire le fichier CSV et compter les lignes (version mémoire)
+const analyzeCsvFile = (fileBuffer, hasHeader) => {
   return new Promise((resolve, reject) => {
     const results = [];
     let lineCount = 0;
     let header = null;
 
-    fs.createReadStream(filePath)
+    // Créer un stream à partir du buffer
+    const stream = require('stream');
+    const readable = new stream.Readable();
+    readable.push(fileBuffer);
+    readable.push(null);
+
+    readable
       .pipe(csv())
       .on('data', (data) => {
         if (lineCount === 0 && hasHeader) {
@@ -106,17 +94,26 @@ const analyzeCsvFile = (filePath, hasHeader) => {
   });
 };
 
-// Fonction pour créer un fichier CSV
-const createCsvFile = (data, headers, outputPath) => {
+// Fonction pour créer un fichier CSV (version mémoire)
+const createCsvFile = (data, headers) => {
   return new Promise((resolve, reject) => {
-    const csvWriter = createCsvWriter({
-      path: outputPath,
-      header: headers.map(header => ({ id: header, title: header }))
-    });
+    try {
+      const csvWriter = createCsvWriter({
+        path: 'temp.csv', // Chemin temporaire
+        header: headers.map(header => ({ id: header, title: header }))
+      });
 
-    csvWriter.writeRecords(data)
-      .then(() => resolve())
-      .catch(reject);
+      csvWriter.writeRecords(data)
+        .then(() => {
+          // Lire le fichier temporaire et le supprimer
+          const csvContent = fs.readFileSync('temp.csv', 'utf8');
+          fs.unlinkSync('temp.csv');
+          resolve(csvContent);
+        })
+        .catch(reject);
+    } catch (error) {
+      reject(error);
+    }
   });
 };
 
@@ -136,20 +133,18 @@ app.post('/api/split-csv', upload.single('file'), async (req, res) => {
 
   if (!maxRowsPerFile || maxRowsPerFile < 1) {
     console.log('Erreur: Nombre de lignes invalide');
-    cleanupFiles([uploadedFile.path]);
     return res.status(400).json({ error: 'Le nombre de lignes par fichier doit être supérieur à 0' });
   }
 
   try {
     console.log('Début de l\'analyse du fichier');
     // Analyser le fichier
-    const analysis = await analyzeCsvFile(uploadedFile.path, hasHeader === 'true');
+    const analysis = await analyzeCsvFile(uploadedFile.buffer, hasHeader === 'true');
     console.log('Analyse terminée:', { totalRows: analysis.totalRows, hasHeader: analysis.header });
     
     // Vérifications
     if (hasHeader === 'true' && analysis.totalRows < 2) {
       console.log('Erreur: Fichier trop petit avec header');
-      cleanupFiles([uploadedFile.path]);
       return res.status(400).json({ 
         error: 'Le fichier doit contenir au minimum un header et une ligne de données' 
       });
@@ -157,7 +152,6 @@ app.post('/api/split-csv', upload.single('file'), async (req, res) => {
 
     if (hasHeader === 'false' && analysis.totalRows < 1) {
       console.log('Erreur: Fichier trop petit sans header');
-      cleanupFiles([uploadedFile.path]);
       return res.status(400).json({ 
         error: 'Le fichier doit contenir au minimum une ligne de données' 
       });
@@ -172,12 +166,6 @@ app.post('/api/split-csv', upload.single('file'), async (req, res) => {
     // Calculer le nombre de fichiers nécessaires
     const numberOfFiles = Math.ceil(totalDataRows / maxRows);
     
-    // Créer les fichiers découpés
-    const outputDir = path.join(__dirname, 'outputs');
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
-    }
-
     const baseFileName = path.parse(uploadedFile.originalname).name;
     const generatedFiles = [];
 
@@ -187,21 +175,18 @@ app.post('/api/split-csv', upload.single('file'), async (req, res) => {
       const chunk = dataRows.slice(startIndex, endIndex);
       
       const outputFileName = `${baseFileName}_part${i + 1}.csv`;
-      const outputPath = path.join(outputDir, outputFileName);
       
       console.log(`Création du fichier ${i + 1}/${numberOfFiles}:`, outputFileName);
-      await createCsvFile(chunk, analysis.header || Object.keys(chunk[0] || {}), outputPath);
+      const csvContent = await createCsvFile(chunk, analysis.header || Object.keys(chunk[0] || {}));
+      
       generatedFiles.push({
         filename: outputFileName,
-        path: outputPath,
+        content: csvContent,
         rows: chunk.length
       });
     }
 
-    console.log('Découpage terminé, nettoyage en cours');
-    // Nettoyer le fichier uploadé
-    cleanupFiles([uploadedFile.path]);
-
+    console.log('Découpage terminé');
     console.log('Réponse envoyée avec succès');
     res.json({
       success: true,
@@ -215,76 +200,12 @@ app.post('/api/split-csv', upload.single('file'), async (req, res) => {
     console.error('Erreur lors du traitement:', error);
     console.error('Stack trace:', error.stack);
     
-    // Nettoyer les fichiers en cas d'erreur
-    if (uploadedFile && uploadedFile.path) {
-      cleanupFiles([uploadedFile.path]);
-    }
-    
     res.status(500).json({ 
       error: 'Erreur lors du traitement du fichier CSV',
       details: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
-});
-
-// Route pour télécharger un fichier individuel
-app.get('/api/download/:filename', (req, res) => {
-  const filename = req.params.filename;
-  const filePath = path.join(__dirname, 'outputs', filename);
-  
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'Fichier non trouvé' });
-  }
-
-  res.download(filePath, filename, (err) => {
-    if (err) {
-      console.error('Erreur lors du téléchargement:', err);
-    }
-    // Nettoyer le fichier après téléchargement
-    setTimeout(() => {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    }, 5000);
-  });
-});
-
-// Route pour télécharger tous les fichiers en ZIP
-app.post('/api/download-all', async (req, res) => {
-  const { files } = req.body;
-  
-  if (!files || !Array.isArray(files)) {
-    return res.status(400).json({ error: 'Liste de fichiers invalide' });
-  }
-
-  const archive = archiver('zip', {
-    zlib: { level: 9 } // Compression maximale
-  });
-
-  res.attachment('fichiers_decoupes.zip');
-  archive.pipe(res);
-
-  const filesToCleanup = [];
-
-  for (const file of files) {
-    const filePath = path.join(__dirname, 'outputs', file.filename);
-    if (fs.existsSync(filePath)) {
-      archive.file(filePath, { name: file.filename });
-      filesToCleanup.push(filePath);
-    }
-  }
-
-  await archive.finalize();
-
-  // Nettoyer les fichiers après un délai
-  setTimeout(() => {
-    filesToCleanup.forEach(filePath => {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    });
-  }, 10000);
 });
 
 // Route pour servir l'application React en production

@@ -64,7 +64,7 @@ const upload = multer({
     }
   },
   limits: {
-    fileSize: 100 * 1024 * 1024 // 100MB max
+    fileSize: 10 * 1024 * 1024 // 10MB max pour Vercel
   }
 });
 
@@ -122,24 +122,33 @@ const createCsvFile = (data, headers, outputPath) => {
 
 // Route principale pour le découpage CSV
 app.post('/api/split-csv', upload.single('file'), async (req, res) => {
+  console.log('Début du traitement CSV');
   const uploadedFile = req.file;
   const { maxRowsPerFile, hasHeader } = req.body;
 
+  console.log('Fichier reçu:', uploadedFile?.originalname);
+  console.log('Paramètres:', { maxRowsPerFile, hasHeader });
+
   if (!uploadedFile) {
+    console.log('Erreur: Aucun fichier fourni');
     return res.status(400).json({ error: 'Aucun fichier fourni' });
   }
 
   if (!maxRowsPerFile || maxRowsPerFile < 1) {
+    console.log('Erreur: Nombre de lignes invalide');
     cleanupFiles([uploadedFile.path]);
     return res.status(400).json({ error: 'Le nombre de lignes par fichier doit être supérieur à 0' });
   }
 
   try {
+    console.log('Début de l\'analyse du fichier');
     // Analyser le fichier
     const analysis = await analyzeCsvFile(uploadedFile.path, hasHeader === 'true');
+    console.log('Analyse terminée:', { totalRows: analysis.totalRows, hasHeader: analysis.header });
     
     // Vérifications
     if (hasHeader === 'true' && analysis.totalRows < 2) {
+      console.log('Erreur: Fichier trop petit avec header');
       cleanupFiles([uploadedFile.path]);
       return res.status(400).json({ 
         error: 'Le fichier doit contenir au minimum un header et une ligne de données' 
@@ -147,6 +156,7 @@ app.post('/api/split-csv', upload.single('file'), async (req, res) => {
     }
 
     if (hasHeader === 'false' && analysis.totalRows < 1) {
+      console.log('Erreur: Fichier trop petit sans header');
       cleanupFiles([uploadedFile.path]);
       return res.status(400).json({ 
         error: 'Le fichier doit contenir au minimum une ligne de données' 
@@ -156,6 +166,8 @@ app.post('/api/split-csv', upload.single('file'), async (req, res) => {
     const maxRows = parseInt(maxRowsPerFile);
     const dataRows = hasHeader === 'true' ? analysis.data : analysis.data;
     const totalDataRows = dataRows.length;
+    
+    console.log('Début du découpage:', { totalDataRows, maxRows });
     
     // Calculer le nombre de fichiers nécessaires
     const numberOfFiles = Math.ceil(totalDataRows / maxRows);
@@ -177,6 +189,7 @@ app.post('/api/split-csv', upload.single('file'), async (req, res) => {
       const outputFileName = `${baseFileName}_part${i + 1}.csv`;
       const outputPath = path.join(outputDir, outputFileName);
       
+      console.log(`Création du fichier ${i + 1}/${numberOfFiles}:`, outputFileName);
       await createCsvFile(chunk, analysis.header || Object.keys(chunk[0] || {}), outputPath);
       generatedFiles.push({
         filename: outputFileName,
@@ -185,9 +198,11 @@ app.post('/api/split-csv', upload.single('file'), async (req, res) => {
       });
     }
 
+    console.log('Découpage terminé, nettoyage en cours');
     // Nettoyer le fichier uploadé
     cleanupFiles([uploadedFile.path]);
 
+    console.log('Réponse envoyée avec succès');
     res.json({
       success: true,
       message: `Fichier découpé avec succès en ${numberOfFiles} partie(s)`,
@@ -198,10 +213,17 @@ app.post('/api/split-csv', upload.single('file'), async (req, res) => {
 
   } catch (error) {
     console.error('Erreur lors du traitement:', error);
-    cleanupFiles([uploadedFile.path]);
+    console.error('Stack trace:', error.stack);
+    
+    // Nettoyer les fichiers en cas d'erreur
+    if (uploadedFile && uploadedFile.path) {
+      cleanupFiles([uploadedFile.path]);
+    }
+    
     res.status(500).json({ 
       error: 'Erreur lors du traitement du fichier CSV',
-      details: error.message 
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });

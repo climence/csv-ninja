@@ -265,17 +265,6 @@ app.post('/api/download-all', async (req, res) => {
   }, 10000);
 });
 
-// Route pour servir l'application React en production
-if (process.env.NODE_ENV === 'production') {
-  // Servir les fichiers statiques du build React
-  app.use(express.static(path.join(__dirname, 'client/build')));
-  
-  // Route pour servir index.html pour toutes les routes non-API
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
-  });
-}
-
 // Export pour Vercel
 module.exports = app;
 

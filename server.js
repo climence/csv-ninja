@@ -1,8 +1,6 @@
 const express = require('express');
 const multer = require('multer');
 const csv = require('csv-parser');
-const createCsvWriter = require('csv-writer').createObjectCsvWriter;
-const archiver = require('archiver');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -55,7 +53,7 @@ const upload = multer({
     }
   },
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB max pour Vercel
+    fileSize: 4 * 1024 * 1024 // 4MB max pour Vercel (limite serverless)
   }
 });
 
@@ -94,23 +92,30 @@ const analyzeCsvFile = (fileBuffer, hasHeader) => {
   });
 };
 
-// Fonction pour créer un fichier CSV (version mémoire)
+// Fonction pour créer un fichier CSV (version mémoire pure)
 const createCsvFile = (data, headers) => {
   return new Promise((resolve, reject) => {
     try {
-      const csvWriter = createCsvWriter({
-        path: 'temp.csv', // Chemin temporaire
-        header: headers.map(header => ({ id: header, title: header }))
+      // Générer le CSV directement en mémoire
+      let csvContent = '';
+      
+      // Ajouter les headers
+      csvContent += headers.join(',') + '\n';
+      
+      // Ajouter les données
+      data.forEach(row => {
+        const rowValues = headers.map(header => {
+          const value = row[header] || '';
+          // Échapper les virgules et guillemets
+          if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+            return `"${value.replace(/"/g, '""')}"`;
+          }
+          return value;
+        });
+        csvContent += rowValues.join(',') + '\n';
       });
-
-      csvWriter.writeRecords(data)
-        .then(() => {
-          // Lire le fichier temporaire et le supprimer
-          const csvContent = fs.readFileSync('temp.csv', 'utf8');
-          fs.unlinkSync('temp.csv');
-          resolve(csvContent);
-        })
-        .catch(reject);
+      
+      resolve(csvContent);
     } catch (error) {
       reject(error);
     }
@@ -119,6 +124,11 @@ const createCsvFile = (data, headers) => {
 
 // Route principale pour le découpage CSV
 app.post('/api/split-csv', upload.single('file'), async (req, res) => {
+  // Timeout pour éviter les dépassements Vercel (8 secondes max)
+  const timeout = setTimeout(() => {
+    res.status(408).json({ error: 'Temps de traitement dépassé. Fichier trop volumineux.' });
+  }, 8000);
+
   console.log('Début du traitement CSV');
   const uploadedFile = req.file;
   const { maxRowsPerFile, hasHeader } = req.body;
@@ -128,11 +138,13 @@ app.post('/api/split-csv', upload.single('file'), async (req, res) => {
 
   if (!uploadedFile) {
     console.log('Erreur: Aucun fichier fourni');
+    clearTimeout(timeout);
     return res.status(400).json({ error: 'Aucun fichier fourni' });
   }
 
   if (!maxRowsPerFile || maxRowsPerFile < 1) {
     console.log('Erreur: Nombre de lignes invalide');
+    clearTimeout(timeout);
     return res.status(400).json({ error: 'Le nombre de lignes par fichier doit être supérieur à 0' });
   }
 
@@ -145,6 +157,7 @@ app.post('/api/split-csv', upload.single('file'), async (req, res) => {
     // Vérifications
     if (hasHeader === 'true' && analysis.totalRows < 2) {
       console.log('Erreur: Fichier trop petit avec header');
+      clearTimeout(timeout);
       return res.status(400).json({ 
         error: 'Le fichier doit contenir au minimum un header et une ligne de données' 
       });
@@ -152,6 +165,7 @@ app.post('/api/split-csv', upload.single('file'), async (req, res) => {
 
     if (hasHeader === 'false' && analysis.totalRows < 1) {
       console.log('Erreur: Fichier trop petit sans header');
+      clearTimeout(timeout);
       return res.status(400).json({ 
         error: 'Le fichier doit contenir au minimum une ligne de données' 
       });
@@ -188,6 +202,7 @@ app.post('/api/split-csv', upload.single('file'), async (req, res) => {
 
     console.log('Découpage terminé');
     console.log('Réponse envoyée avec succès');
+    clearTimeout(timeout);
     res.json({
       success: true,
       message: `Fichier découpé avec succès en ${numberOfFiles} partie(s)`,
@@ -200,6 +215,7 @@ app.post('/api/split-csv', upload.single('file'), async (req, res) => {
     console.error('Erreur lors du traitement:', error);
     console.error('Stack trace:', error.stack);
     
+    clearTimeout(timeout);
     res.status(500).json({ 
       error: 'Erreur lors du traitement du fichier CSV',
       details: error.message,

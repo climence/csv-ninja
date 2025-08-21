@@ -25,6 +25,11 @@ function App() {
   const onDrop = useCallback((acceptedFiles) => {
     const uploadedFile = acceptedFiles[0];
     if (uploadedFile && (uploadedFile.type === 'text/csv' || uploadedFile.name.endsWith('.csv'))) {
+      // Vérifier la taille du fichier (4MB max)
+      if (uploadedFile.size > 4 * 1024 * 1024) {
+        setError('Le fichier est trop volumineux. Taille maximum : 4MB.');
+        return;
+      }
       setFile(uploadedFile);
       setError(null);
     } else {
@@ -156,7 +161,7 @@ function App() {
               ) : (
                 <div>
                   <p><strong>Cliquez pour sélectionner</strong> ou glissez-déposez votre fichier CSV</p>
-                  <p className="dropzone-hint">Formats acceptés: .csv (max 100MB)</p>
+                  <p className="dropzone-hint">Formats acceptés: .csv (max 4MB)</p>
                 </div>
               )}
             </div>

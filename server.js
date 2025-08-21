@@ -14,9 +14,20 @@ const { promisify } = require('util');
 const app = express();
 const PORT = process.env.PORT || 5002;
 
+// Middleware de logging pour déboguer
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  next();
+});
+
 // Middleware de sécurité
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+    ? ['https://csv-ninja.vercel.app', 'https://csv-ninja-git-main-climence.vercel.app']
+    : true,
+  credentials: true
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
